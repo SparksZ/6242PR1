@@ -122,32 +122,39 @@ parseRuntime <- function(x) {
   result
 }
 
-runtimes <-  lapply(movieDfNumericRuntimes$Runtime, parseRuntime)
-
-library("plyr")
-
-n <- ldply(runtimes)
+runtimes <-  unlist(lapply(movieDfNumericRuntimes$Runtime, parseRuntime))
 
 movieDfNumericRuntimes$Runtime <- runtimes
-
-movieDfNumericRuntimes$Runtime[1]
-
+movieDfNumericRuntimes$Runtime <- as.numeric(movieDfNumericRuntimes$Runtime)
+movieDfNumericRuntimes <- movieDfNumericRuntimes[!is.na(movieDfNumericRuntimes$Runtime),]
 ```
 
 Now investigate the distribution of `Runtime` values and how it changes over years (variable `Year`, which you can bucket into decades) and in relation to the budget (variable `Budget`). Include any plots that illustrate.
 
 ```{r}
 # TODO: Investigate the distribution of Runtime values and how it varies by Year and Budget
-unique(movieDfNumericRuntimes$Year)
+bucketedYearsDf <- movieDfNumericRuntimes
+bucketedYearsDf$Year <- round_any(bucketedYearsDf$Year, 10, f = floor)
 
-runtimeOverYearsBoxPlot <- ggplot(movieDfNumericRuntimes, aes(Year, Runtime)) + geom_boxplot()
+runtimeOverYearsBoxPlot <- ggplot(data = bucketedYearsDf, aes(x=factor(Year), y=Runtime)) + geom_boxplot(aes(fill=Year)) + xlab("Decade")
+runtimeOverYearsBoxPlot
+
+moviesWithBudgetValue <- movieDfNumericRuntimes[!is.na(movieDfNumericRuntimes$Budget),]
+correlationValue <- round(cor(moviesWithBudgetValue$Budget, moviesWithBudgetValue$Runtime), 2)
+
+title <- paste("Correlation Between Runtime and Budget", "Pearson Cor =", correlationValue)
+
+runtimeVsBudgetPlot <- ggplot(data = moviesWithBudgetValue, aes(x=Budget, y=Runtime, group=Budget)) + geom_point() + geom_smooth(method = "lm") + ggtitle(title)
+runtimeVsBudgetPlot
 ```
 
 _Feel free to insert additional code chunks as necessary._
 
 **Q**: Comment on the distribution as well as relationships. Are there any patterns or trends that you can observe?
 
-**A**: 
+**A**: At the beginning of cinema, the movies were very short. As time progressed, the movies began to get longer.  However, there was a large range of runtimes from the 1910s to the 1940s.  Once the 1950s came around, the distribution of runtimes really narrowed and stayed stable until the present.  
+
+AS far as correlation between the runtime's of movies and their budget, there is a slightly positive correlation, which can be seen in the scatter plot.  The Pearson correlation coefficient is 0.29, which suggests a slightly positive relationship between the values.  Between budgets 0 and 1e+08, there is much of a correlation, however, as the budgets increased from there, a postive correlation can be seen.
 
 ## 3. Encode `Genre` column
 
@@ -156,19 +163,53 @@ The column `Genre` represents a list of genres associated with the movie in a st
 For example, if there are a total of 3 genres: Drama, Comedy, and Action, a movie that is both Action and Comedy should be represented by a binary vector <0, 1, 1>. Note that you need to first compile a dictionary of all possible genres and then figure out which movie has which genres (you can use the R `tm` package to create the dictionary).
 
 ```{r}
-# TODO: Replace Genre with a collection of binary columns
+# TODO: Replace Genre with a collection of binary columns'
+
+# returns string w/o leading or trailing whitespace (https://stackoverflow.com/questions/2261079/how-to-trim-leading-and-trailing-whitespace-in-r)
+trim <- function (x) gsub("^\\s+|\\s+$", "", x)
+
+# Get list of genres
+genres <- unlist(strsplit(movieDfNumericRuntimes$Genre, ","))
+# Trim and get unique list of genres
+genres <- unique(unlist(lapply(genres,FUN=trim)))
+# make a new data frame for binary genre columns
+binaryGenreDF <- movieDfNumericRuntimes
+# Add genre columns and assign 0 values.
+binaryGenreDF[genres] <- 0
+
+# loop through genres, find all that have current genre and assign 1 to appropiate column
+for (genre in genres) {
+  binaryGenreDF[grepl(genre, binaryGenreDF$Genre), genre] <- 1
+}
+
+binaryGenreDF$Genre <- NULL
 ```
 
 Plot the relative proportions of movies having the top 10 most common genres.
 
 ```{r}
 # TODO: Select movies from top 10 most common genres and plot their relative proportions
+genreColumns <- binaryGenreDF[,genres]
+columnSums <- sort(-colSums(genreColumns)) * -1
+barplot(columnSums[1:10], las=2)
 ```
 
 Examine how the distribution of `Runtime` changes across genres for the top 10 most common genres.
 
 ```{r}
 # TODO: Plot Runtime distribution for top 10 most common genres
+top10GenreDF <- subset(binaryGenreDF, Drama==1|Comedy==1|Short==1|Romance==1|Action==1|Crime==1|Thriller==1|Documentary==1|Adventure==1|Animation==1)
+top10Genres <- names(columnSums[1:10])
+
+top10GenreRuntimeDf <- data.frame(genre = character(0), runtime = numeric(0))
+
+for (genre in top10Genres) {
+  runtime <- top10GenreDF$Runtime[top10GenreDF[genre]==1]
+  top10GenreRuntimeDf <- rbind(top10GenreRuntimeDf, cbind(genre, runtime))
+}
+
+genreRuntimePlot <- ggplot(top10GenreRuntimeDf, aes(x=genre, y=as.numeric(runtime), group=genre)) + geom_boxplot() + scale_y_continuous("Runtime")
+genreRuntimePlot
 ```
 
 **Q**: Describe the interesting relationship(s) you observe. Are there any expected or unexpected trends that are evident?
